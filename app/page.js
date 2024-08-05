@@ -14,7 +14,7 @@ import {
   IconButton,
   Grid,
 } from '@mui/material'
-import { Add, Edit, Delete } from '@mui/icons-material'
+import { Add, Edit, Delete, Remove } from '@mui/icons-material'
 import { firestore } from '@/firebase'
 import {
   collection,
@@ -47,6 +47,7 @@ export default function Home() {
   const [filteredInventory, setFilteredInventory] = useState([])
   const [open, setOpen] = useState(false)
   const [itemName, setItemName] = useState('')
+  const [itemQuantity, setItemQuantity] = useState(0)
   const [itemToEdit, setItemToEdit] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -65,14 +66,14 @@ export default function Home() {
     updateInventory()
   }, [])
 
-  const addItem = async (item) => {
+  const addItem = async (item, quantity) => {
     const docRef = doc(collection(firestore, 'inventory'), item)
     const docSnap = await getDoc(docRef)
     if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
-      await setDoc(docRef, { quantity: quantity + 1 })
+      const { quantity: existingQuantity } = docSnap.data()
+      await setDoc(docRef, { quantity: existingQuantity + quantity })
     } else {
-      await setDoc(docRef, { quantity: 1 })
+      await setDoc(docRef, { quantity })
     }
     await updateInventory()
   }
@@ -101,14 +102,13 @@ export default function Home() {
     await updateInventory()
   }
 
-  const updateItem = async (item, newName) => {
-    const oldDocRef = doc(collection(firestore, 'inventory'), item)
+  const updateItem = async (oldName, newName, quantity) => {
+    const oldDocRef = doc(collection(firestore, 'inventory'), oldName)
     const newDocRef = doc(collection(firestore, 'inventory'), newName)
     const docSnap = await getDoc(oldDocRef)
     if (docSnap.exists()) {
-      const { quantity } = docSnap.data()
       await setDoc(newDocRef, { quantity })
-      if (item !== newName) {
+      if (oldName !== newName) {
         await deleteDoc(oldDocRef)
       }
     }
@@ -119,8 +119,10 @@ export default function Home() {
     setItemToEdit(item)
     if (item) {
       setItemName(item.name)
+      setItemQuantity(item.quantity || 0)
     } else {
       setItemName('')
+      setItemQuantity(0)
     }
     setOpen(true)
   }
@@ -141,6 +143,12 @@ export default function Home() {
         )
       )
     }
+  }
+
+  const deleteItem = async (item) => {
+    const docRef = doc(collection(firestore, 'inventory'), item)
+    await deleteDoc(docRef)
+    await updateInventory()
   }
 
   return (
@@ -166,22 +174,36 @@ export default function Home() {
           </Typography>
           <Stack width="100%" direction={'row'} spacing={2}>
             <TextField
-              id="outlined-basic"
-              label="Item"
+              id="item-name"
+              label="Item Name"
               variant="outlined"
               fullWidth
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
             />
+            <TextField
+              id="item-quantity"
+              label="Quantity"
+              variant="outlined"
+              type="text" // Use text type to handle leading zeros
+              fullWidth
+              value={itemQuantity === 0 ? '' : itemQuantity} // Show empty string if quantity is 0
+              onChange={(e) => {
+                // Remove leading zeros
+                const value = e.target.value.replace(/^0+/, '');
+                setItemQuantity(value === '' ? 0 : Number(value)); // Convert to number or set to 0 if empty
+              }}
+            />
             <Button
               variant="outlined"
               onClick={() => {
                 if (itemToEdit) {
-                  updateItem(itemToEdit.name, itemName)
+                  updateItem(itemToEdit.name, itemName, itemQuantity)
                 } else {
-                  addItem(itemName)
+                  addItem(itemName, itemQuantity)
                 }
                 setItemName('')
+                setItemQuantity(0)
                 handleClose()
               }}
             >
@@ -217,7 +239,7 @@ export default function Home() {
         sx={{
           width: '100%',
           maxWidth: '800px',
-          height: 'calc(100vh - 160px)', // Adjust height based on other elements
+          height: 'calc(100vh - 160px)',
           overflowY: 'auto',
           marginTop: 2,
         }}
@@ -238,11 +260,27 @@ export default function Home() {
                   <IconButton onClick={() => incrementItem(name)}>
                     <Add />
                   </IconButton>
-                  <Button variant="contained" onClick={(e) => { e.stopPropagation(); handleOpen({ name, quantity }) }}>
+                  <IconButton onClick={() => removeItem(name)}>
+                    <Remove />
+                  </IconButton>
+                  <Button
+                    variant="contained"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpen({ name, quantity });
+                    }}
+                  >
                     Edit
                   </Button>
-                  <Button variant="contained" onClick={(e) => { e.stopPropagation(); removeItem(name) }}>
-                    Remove
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteItem(name);
+                    }}
+                  >
+                    Delete
                   </Button>
                 </CardActions>
               </Card>
